@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    
+    // Global Access Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function incoming() {
+      return request.resource.data;
+    }
+    
+    function existing() {
+      return resource.data;
+    }
+    
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.keys().hasAll(['email']) && request.auth.token.email.matches('(?i)^admin@qbank\\.com$')) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+    
+    // strict schemas
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'email', 'createdAt']) 
+        && data.keys().size() >= 3 
+        && (data.id == request.auth.uid || isAdmin()) 
+        && data.email is string && data.email.size() <= 200
+        && data.createdAt is string && data.createdAt.size() <= 100;
+    }
+    
+    function isValidQuestion(data) {
+      return data.keys().hasAll(['id', 'question_text', 'options', 'correct_answer', 'subject', 'difficulty', 'userId'])
+        && data.keys().size() >= 7
+        && data.id is string && data.id.size() <= 128
+        && data.question_text is string && data.question_text.size() <= 5000
+        && data.options is list && data.options.size() == 4
+        && data.options[0] is string && data.options[0].size() <= 1000
+        && data.options[1] is string && data.options[1].size() <= 1000
+        && data.options[2] is string && data.options[2].size() <= 1000
+        && data.options[3] is string && data.options[3].size() <= 1000
+        && (data.correct_answer == 'أ' || data.correct_answer == 'ب' || data.correct_answer == 'ج' || data.correct_answer == 'د')
+        && data.subject is string && data.subject.size() <= 100
+        && (data.difficulty == 'سهل' || data.difficulty == 'متوسط' || data.difficulty == 'صعب')
+        && data.userId == request.auth.uid;
+    }
+    
+    function isValidExam(data) {
+      return data.keys().hasAll(['id', 'title', 'subject', 'difficulty', 'duration', 'questions', 'created_at', 'userId'])
+        && data.title is string && data.title.size() <= 500
+        && data.subject is string && data.subject.size() <= 100
+        && data.difficulty is string && data.difficulty.size() <= 100
+        && data.duration is string && data.duration.size() <= 100
+        && data.questions is list && data.questions.size() <= 100
+        && data.userId == request.auth.uid;
+    }
+    
+    // Users Profile Collection
+    match /users/{userId} {
+      allow list: if isSignedIn() && isAdmin();
+      allow get: if isSignedIn() && (userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidUser(incoming()) && (userId == request.auth.uid || isAdmin());
+      allow update: if isSignedIn() && isValidUser(incoming()) && (userId == request.auth.uid || isAdmin()) 
+        && incoming().id == existing().id && incoming().createdAt == existing().createdAt;
+      allow delete: if isSignedIn() && isAdmin(); 
+    }
+    
+    // Questions Bank Collection
+    match /questions/{questionId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() && isValidQuestion(incoming());
+      allow update: if isSignedIn() && isValidQuestion(incoming()) 
+        && existing().userId == request.auth.uid 
+        && incoming().userId == existing().userId;
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+    }
+    
+    // Exams Collection
+    match /exams/{examId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidExam(incoming());
+      allow update: if isSignedIn() && isValidExam(incoming()) 
+        && existing().userId == request.auth.uid 
+        && incoming().userId == existing().userId;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+  }
+}

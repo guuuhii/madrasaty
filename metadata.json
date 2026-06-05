@@ -1,0 +1,6 @@
+{
+  "name": "Q-Bank Pro",
+  "description": "منظومة بنك الاسئلة والامتحانات المتقدمة مع ميزة الاستيراد الذكي بالذكاء الاصطناعي والتصدير المنسق للامتحانات باللغة العربية",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
